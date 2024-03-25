@@ -2,63 +2,98 @@
 
 constexpr uint8_t LCD_ADDR = 0x27;
 
-constexpr uint8_t START_BUTTON_PORT     = 13;
-constexpr uint8_t START_GATE_PORT       = 12;
-constexpr uint8_t FINISH_GATE_PORT      = 11;
-constexpr uint8_t SEMAPHORE_RED_PORT    = 4;
-constexpr uint8_t SEMAPHORE_YELLOW_PORT = 3;
-constexpr uint8_t SEMAPHORE_GREEN_PORT  = 2;
+constexpr uint8_t START_BUTTON_PORT     = 4;
+constexpr uint8_t START_GATE_PORT       = 6;
+constexpr uint8_t FINISH_GATE_PORT      = 7;
+constexpr uint8_t SEMAPHORE_RED_PORT    = 9;
+constexpr uint8_t SEMAPHORE_YELLOW_PORT = 11;
+constexpr uint8_t SEMAPHORE_GREEN_PORT  = 10;
 
-constexpr long SEMAPHORE_STOP_TIME      = 1000;
-constexpr long SEMAPHORE_READY_MIN_TIME = 1500;
-constexpr long SEMAPHORE_READY_MAX_TIME = 4000;
+constexpr long SEMAPHORE_STOP_TIME      = 2000;
+constexpr long SEMAPHORE_READY_MIN_TIME = 2500;
+constexpr long SEMAPHORE_READY_MAX_TIME = 3000;
 
 const unsigned int MAX_RACE_COUNT = 5;
 
 constexpr long START_GATE_COOLDOWN = 5000;
 constexpr long FINISH_GATE_COOLDOWN = 5000;
 
-const char vStringBuffer[20];
+constexpr long LINE_MOVE_TIME = 500;
+constexpr long LINE_MOVE_STEP = 2;
+constexpr long UI_UPDATE_TIME = 100;
+
+const char vStringBuffer[21];
+const char vLineBuffer[21];
+const char vTimeStringBuffer[20];
+const char vReactionTimeStringBuffer[10];
+
+constexpr const char* MORE_THAN_SECOND = "(>1s)";
+
+unsigned long vCycleMillis = 0;
 
 //----------------------------------------------------------
 //
 // Utils
 //
 //----------------------------------------------------------
-char* time_to_str(unsigned long time) {
+const char* time_to_str(unsigned long time) {
   sprintf(
-    vStringBuffer,
+    vTimeStringBuffer,
     "%02d:%02d:%02d",
     (int)((time % 3600000) / 60000),
     (int)((time % 60000) / 1000),
     (int)((time % 1000) / 10)
   );
 
-  return vStringBuffer;
+  return vTimeStringBuffer;
+}
+
+const char* _reactionTimeToStr(unsigned long time) {
+  if (time > 1000) {
+    return MORE_THAN_SECOND;
+  } else {
+    sprintf(
+      vReactionTimeStringBuffer,
+      "(%03dms)",
+      (int)(time % 1000)
+    );
+
+    return vReactionTimeStringBuffer;
+  }
+}
+
+const char* _toLineBuffer(const char* line) {
+  sprintf(
+    vLineBuffer,
+    "%-20s",
+    line
+  );
+
+  return vLineBuffer;
 }
 
 void semaphoreRed() {
-  digitalWrite(SEMAPHORE_RED_PORT, LOW);
-  digitalWrite(SEMAPHORE_YELLOW_PORT, HIGH);
-  digitalWrite(SEMAPHORE_GREEN_PORT, HIGH);
+  digitalWrite(SEMAPHORE_RED_PORT, HIGH);
+  digitalWrite(SEMAPHORE_YELLOW_PORT, LOW);
+  digitalWrite(SEMAPHORE_GREEN_PORT, LOW);
 }
 
 void semaphoreYellow() {
-  digitalWrite(SEMAPHORE_RED_PORT, HIGH);
-  digitalWrite(SEMAPHORE_YELLOW_PORT, LOW);
-  digitalWrite(SEMAPHORE_GREEN_PORT, HIGH);
-}
-
-void semaphoreGreen() {
-  digitalWrite(SEMAPHORE_RED_PORT, HIGH);
+  digitalWrite(SEMAPHORE_RED_PORT, LOW);
   digitalWrite(SEMAPHORE_YELLOW_PORT, HIGH);
   digitalWrite(SEMAPHORE_GREEN_PORT, LOW);
 }
 
-void semaphoreOff() {
-  digitalWrite(SEMAPHORE_RED_PORT, HIGH);
-  digitalWrite(SEMAPHORE_YELLOW_PORT, HIGH);
+void semaphoreGreen() {
+  digitalWrite(SEMAPHORE_RED_PORT, LOW);
+  digitalWrite(SEMAPHORE_YELLOW_PORT, LOW);
   digitalWrite(SEMAPHORE_GREEN_PORT, HIGH);
+}
+
+void semaphoreOff() {
+  digitalWrite(SEMAPHORE_RED_PORT, LOW);
+  digitalWrite(SEMAPHORE_YELLOW_PORT, LOW);
+  digitalWrite(SEMAPHORE_GREEN_PORT, LOW);
 }
 
 //----------------------------------------------------------
@@ -73,10 +108,27 @@ struct SFinish {
 
 class CRace {
 public:
-  CRace(unsigned int sequence, bool falseStart = false) {
+  CRace(unsigned int sequence) {
     this->vSequence = sequence;
     this->vStartTime = millis();
-    this->vFalseStart = falseStart;
+  }
+
+  const CRace* falseStart() {
+    this->vFalseStart = true;
+    this->vOutTime = this->vStartTime;
+
+    return this;
+  }
+
+  const CRace* pilotWentFromGates() {
+    if (this->vOutTime == 0)
+      this->vOutTime = millis();
+
+    return this;
+  }
+
+  bool isPilotOut() {
+    return this->vOutTime != 0;
   }
 
   bool isFinished() {
@@ -97,6 +149,12 @@ public:
     }
   }
 
+  unsigned int reactionTime() {
+    if (this->vOutTime) {
+      return this->vOutTime - this->vStartTime;
+    }
+  }
+
   unsigned int getId() {
     return this->vSequence;
   }
@@ -108,13 +166,35 @@ public:
     };
   }
 
-  void finish() {
+  const CRace* finish() {
     this->vFinishTime = millis();
+
+    return this;
+  }
+
+  const char* toString() {
+    unsigned long time = this->getTime();
+  
+    sprintf(vStringBuffer,
+      "%d| %02d:%02d:%02d%s %s",
+      this->getId(),
+
+      (int)((time % 3600000) / 60000),
+      (int)((time % 60000) / 1000),
+      (int)((time % 1000) / 10),
+
+      this->isFalseStarted() ? "+P" : "",
+  
+      this->isPilotOut() && !this->isFalseStarted() ? _reactionTimeToStr(this->reactionTime()) : ""
+    );
+
+    return vStringBuffer;
   }
 
 protected:
   unsigned int  vSequence   = 0;
   unsigned long vStartTime  = 0;
+  unsigned long vOutTime    = 0;
   unsigned long vFinishTime = 0;
   bool          vFalseStart = false;
 };
@@ -141,7 +221,7 @@ public:
     return pilotsOnTrack;
   }
 
-  CRace* lastFinishedRace() {
+  const CRace* lastFinishedRace() {
     for (unsigned int raceIndex = 0; raceIndex < MAX_RACE_COUNT; raceIndex ++) {
       if ((void*)this->vRaceArray[raceIndex] == NULL) continue;
 
@@ -153,7 +233,25 @@ public:
     return NULL;
   }
 
-  CRace* finishPretenderRace() {
+  const CRace* finishedRaceLastWithOffset(unsigned int index = 0) {
+    int skipIfNotNull = index;
+
+    for (unsigned int raceIndex = 0; raceIndex < MAX_RACE_COUNT; raceIndex ++) {
+      if ((void*)this->vRaceArray[raceIndex] == NULL) continue;
+
+      if (!this->vRaceArray[raceIndex]->isFinished()) continue;
+      if (skipIfNotNull != 0) {
+          skipIfNotNull --;
+          continue;
+      }
+      
+      return this->vRaceArray[raceIndex];
+    }
+
+    return NULL;
+  }
+
+  const CRace* finishPretenderRace() {
     CRace* lastPretender = (CRace*)NULL;
 
     for (unsigned int raceIndex = 0; raceIndex < MAX_RACE_COUNT; raceIndex ++) {
@@ -186,13 +284,23 @@ public:
     return MAX_RACE_COUNT - 1 > this->howManyPilotsOnTrack();
   }
 
-  void startRace(bool falseStart = false) {
-    _clearLastRun();
-    this->vCurrentId ++;
-    this->vRaceArray[0] = new CRace(this->vCurrentId, falseStart);
+  const CRace* falseStart() {
+    return this->createRace()->falseStart();
+  }
+
+  const CRace* startRace() {
+    return this->createRace();
   }
 
 protected:
+  const CRace* createRace() {
+    _clearLastRun();
+    this->vCurrentId ++;
+    this->vRaceArray[0] = new CRace(this->vCurrentId);
+
+    return this->vRaceArray[0];
+  }
+
   void _clearLastRun() {
     if ((void*)this->vRaceArray[MAX_RACE_COUNT - 1] != NULL) {
       delete this->vRaceArray[MAX_RACE_COUNT - 1];
@@ -327,7 +435,7 @@ public:
 
   CState(IHandler* handler) {
     this->vHandler = handler;
-    this->_changeState(STATE_READY);
+    this->_stateGateCooldown();
   }
 
   void process() {
@@ -381,6 +489,8 @@ protected:
     if (this->vHandler->isStartButtonOn()) {
       this->_changeState(STATE_COUNTDOWN);
       this->vSemaphore.turnOn();
+    } else if(this->vHandler->isSomebodyInStartGate()) {
+      this->_changeState(STATE_GATE_COOLDOWN);
     }
   }
 
@@ -392,7 +502,7 @@ protected:
     } else if(this->vHandler->isSomebodyInStartGate()) {
       // false start
       this->vSemaphore.alert();
-      this->vTrack.startRace(true);
+      this->vTrack.falseStart();
 
       this->_changeState(STATE_GATE_COOLDOWN);
       this->process();
@@ -401,6 +511,8 @@ protected:
 
   void _stateGateOpen() {
     if (this->vHandler->isSomebodyInStartGate()) {
+      this->vTrack.lastRace()->pilotWentFromGates();
+
       this->_changeState(STATE_GATE_COOLDOWN);
     }
   }
@@ -472,8 +584,12 @@ protected:
   }
 
   void _tryOpen() {
-    if (this->vRaceState->getTrack()->howManyPilotsOnTrack() > 0) {
+    if (this->vHandler->isSomebodyInFinishGate()) {
+      this->_changeState(FINISH_COOLDOWN);
+    } else if (this->vRaceState->getTrack()->howManyPilotsOnTrack() > 0) {
       this->_changeState(FINISH_READY);
+    } else {
+      this->_changeState(FINISH_CLOSED);
     }
   }
 
@@ -531,6 +647,29 @@ CFinishGate vFinishGate(&vState, &vFinishGateHandler);
 
 LiquidCrystal_I2C lcd(LCD_ADDR, 20, 4);
 
+//----------------------------------------------------
+// Tools and UI
+//----------------------------------------------------
+class CTimer {
+public:
+  CTimer(unsigned int updateTime = 1000) {
+    this->vTime = millis();
+    this->vUpdateTime = updateTime;
+  }
+
+  bool isTimeOut() {
+    return this->vTime + this->vUpdateTime < millis();
+  }
+  
+  void reset() {
+    this->vTime = millis();
+  }
+
+protected:
+  unsigned long vTime;
+  unsigned int  vUpdateTime;
+};
+
 void setup() {
   lcd.init();
   lcd.backlight();
@@ -557,116 +696,69 @@ void setup() {
 // UI (Temporary)
 //
 //----------------------------------------------------------
-void showMainState() {
-  lcd.setCursor(0, 2);
+CTimer    vUITimer(UI_UPDATE_TIME);
 
-  switch (vState.getState()) {
-    case CState::EState::STATE_READY:
-      lcd.print("Ready    ");
+constexpr const char* TEXT_READY = "Ready";
+constexpr const char* TEXT_START_GATE_COOLDOWN = "Wait start gate";
+constexpr const char* TEXT_FINISH_GATE_COOLDOWN = "Wait finish gate";
+constexpr const char* TEXT_GATE_OPEN = "Race started";
+constexpr const char* TEXT_EMPTY = "";
+const char* vTextState = "";
+
+void showRaceInfo() {
+  switch(vState.getState()) {
+    case CState::STATE_READY:
+      if (vFinishGate.getState() == CFinishGate::FINISH_COOLDOWN && vTrack.howManyPilotsOnTrack() == 0) {
+        vTextState = TEXT_FINISH_GATE_COOLDOWN;
+      } else {
+        vTextState = TEXT_READY;
+      }
       break;
-    case CState::EState::STATE_COUNTDOWN:
-      lcd.print("Countdown");
+    
+    case CState::STATE_GATE_COOLDOWN:
+      vTextState = TEXT_START_GATE_COOLDOWN;
       break;
-    case CState::EState::STATE_GATE_OPEN:
-      lcd.print("Go       ");
+
+    case CState::STATE_GATE_OPEN:
+      vTextState = TEXT_GATE_OPEN;
       break;
-    case CState::EState::STATE_GATE_COOLDOWN:
-      lcd.print("Prepare  ");
+
+    case CState::STATE_COUNTDOWN:
+      vTextState = TEXT_GATE_OPEN;
       break;
+
     default:
-      lcd.print("Error    ");
-      break;
+      vTextState = TEXT_EMPTY;
   }
 
-  sprintf(
-    vStringBuffer,
-    " | Next: %02d",
-    vState.getTrack()->nextRaceId()
+  sprintf(vStringBuffer,
+    "%d| %s",
+    vState.getTrack()->nextRaceId(),
+    vTextState
   );
-  lcd.print(vStringBuffer);
-}
 
-void showSemaphoreState() {
-  lcd.setCursor(0, 3);
-
-  const char* vSemaphoreStateString;
-  switch (vState.getSemaphore()->getState()) {
-    case CSemaphore::ESemaphoreState::SEMAPHORE_STOP:
-      vSemaphoreStateString = "Red   ";
-      break;
-    case CSemaphore::ESemaphoreState::SEMAPHORE_READY:
-      vSemaphoreStateString = "Yellow";
-      break;
-    case CSemaphore::ESemaphoreState::SEMAPHORE_GO:
-      vSemaphoreStateString = "Green ";
-      break;
-    default:
-      vSemaphoreStateString = "Closed";
-      break;
-  }
-
-  const char *vFinishStateString;
-  switch (vFinishGate.getState()) {
-    case CFinishGate::EState::FINISH_READY:
-      vFinishStateString = "Open  ";
-      break;
-    case CFinishGate::EState::FINISH_COOLDOWN:
-      vFinishStateString = "Closed";
-      break;
-    default:
-      vFinishStateString = "Closed";
-      break;
-  }
-
-  char buff[20];
-  sprintf(buff, "Gates: %s/%s", vSemaphoreStateString, vFinishStateString);
-  lcd.print(buff);
-}
-
-void showCurrentRun() {
-  lcd.setCursor(0, 1);
-  char buff[20];
-  CRace* firstFinishPretender = vState.getTrack()->finishPretenderRace();
-
-  if ((void*)firstFinishPretender == NULL) {
-    lcd.print("                    ");
-    return;
-  }
-
-  unsigned long raceTime = firstFinishPretender->getTime();
-
-  sprintf(buff, "%d|", firstFinishPretender->getId());
-  lcd.print(buff);
-  lcd.print(time_to_str(raceTime));
-
-  if (firstFinishPretender->isFalseStarted()) {
-    lcd.print("+P");
-  } else {
-    lcd.print("  ");
-  }
-}
-
-void showLastRun() {
   lcd.setCursor(0, 0);
+  lcd.print(_toLineBuffer(vStringBuffer));
 
-  CRace* lastFinishedRace = vState.getTrack()->lastFinishedRace();
+}
 
-  if ((void*)lastFinishedRace == NULL) {
-    lcd.print("                    ");
-    return;
+void showRaceTimes() {
+  CRace* race = vState.getTrack()->lastRace();
+  if (race && !race->isFinished()) {
+    lcd.setCursor(0, 1);
+    lcd.print(_toLineBuffer(race->toString()));
+  }
+  
+  race = vState.getTrack()->lastFinishedRace();
+  if (race) {
+    lcd.setCursor(0, 2);
+    lcd.print(_toLineBuffer(race->toString()));
   }
 
-  char buff[20];
-  unsigned long raceTime = lastFinishedRace->getTime();
-
-  sprintf(buff, "%d|", lastFinishedRace->getId());
-  lcd.print(buff);
-  lcd.print(time_to_str(raceTime));
-
-  if (lastFinishedRace->isFalseStarted()) {
-    lcd.print("+P");
-  } else {
-    lcd.print("  ");
+  race = vState.getTrack()->finishedRaceLastWithOffset(1);
+  if (race) {
+    lcd.setCursor(0, 3);
+    lcd.print(_toLineBuffer(race->toString()));
   }
 }
 
@@ -679,8 +771,10 @@ void loop() {
   vState.process();
   vFinishGate.process();
 
-  showLastRun();
-  showCurrentRun();
-  showMainState();
-  showSemaphoreState();
+  if (vUITimer.isTimeOut()) {
+    vUITimer.reset();
+
+    showRaceInfo();
+    showRaceTimes();
+  }
 }
