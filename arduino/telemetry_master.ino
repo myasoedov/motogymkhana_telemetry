@@ -9,14 +9,14 @@ constexpr uint8_t SEMAPHORE_RED_PORT    = 11;
 constexpr uint8_t SEMAPHORE_YELLOW_PORT = 9;
 constexpr uint8_t SEMAPHORE_GREEN_PORT  = 10;
 
-constexpr long SEMAPHORE_STOP_TIME      = 2000;
-constexpr long SEMAPHORE_READY_MIN_TIME = 2500;
-constexpr long SEMAPHORE_READY_MAX_TIME = 3000;
+constexpr long SEMAPHORE_STOP_TIME      = 1000;
+constexpr long SEMAPHORE_READY_MIN_TIME = 1500;
+constexpr long SEMAPHORE_READY_MAX_TIME = 2000;
 
 const unsigned int MAX_RACE_COUNT = 5;
 
-constexpr long START_GATE_COOLDOWN = 5000;
-constexpr long FINISH_GATE_COOLDOWN = 5000;
+constexpr long START_GATE_COOLDOWN = 3000;
+constexpr long FINISH_GATE_COOLDOWN = 3000;
 
 constexpr long LINE_MOVE_TIME = 500;
 constexpr long LINE_MOVE_STEP = 2;
@@ -627,14 +627,14 @@ public:
     return digitalRead(START_BUTTON_PORT) == HIGH;
   }
   bool isSomebodyInStartGate() {
-    return digitalRead(START_GATE_PORT) == LOW;
+    return digitalRead(START_GATE_PORT) == HIGH;
   }
 };
 
 class CFinishGateHandlerImpl : public CFinishGate::IHandler {
 public:
   bool isSomebodyInFinishGate() {
-    return digitalRead(FINISH_GATE_PORT) == LOW;
+    return digitalRead(FINISH_GATE_PORT) == HIGH;
   }
 };
 
