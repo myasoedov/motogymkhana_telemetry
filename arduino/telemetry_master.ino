@@ -12,6 +12,7 @@ constexpr uint8_t SEMAPHORE_GREEN_PORT  = 10;
 constexpr long SEMAPHORE_STOP_TIME      = 1000;
 constexpr long SEMAPHORE_READY_MIN_TIME = 1500;
 constexpr long SEMAPHORE_READY_MAX_TIME = 2000;
+constexpr long SEMAPHORE_ALERT_FLICK_TIME = 500;
 
 const unsigned int MAX_RACE_COUNT = 5;
 
@@ -174,7 +175,7 @@ public:
 
   const char* toString() {
     unsigned long time = this->getTime();
-  
+
     sprintf(vStringBuffer,
       "%d| %02d:%02d:%02d%s %s",
       this->getId(),
@@ -184,7 +185,7 @@ public:
       (int)((time % 1000) / 10),
 
       this->isFalseStarted() ? "+P" : "",
-  
+
       this->isPilotOut() && !this->isFalseStarted() ? _reactionTimeToStr(this->reactionTime()) : ""
     );
 
@@ -244,7 +245,7 @@ public:
           skipIfNotNull --;
           continue;
       }
-      
+
       return this->vRaceArray[raceIndex];
     }
 
@@ -350,12 +351,19 @@ public:
     case SEMAPHORE_STOP:
       this->_processStop();
       break;
+
     case SEMAPHORE_READY:
       this->_processReady();
       break;
+
     case SEMAPHORE_GO:
       this->_processGo();
       break;
+
+    case SEMAPHORE_ALERT:
+      this->_processAlert();
+      break;
+
     default:
       break;
     };
@@ -377,14 +385,22 @@ protected:
     case SEMAPHORE_STOP:
       semaphoreRed();
       break;
+
     case SEMAPHORE_READY:
       semaphoreYellow();
       break;
+
     case SEMAPHORE_GO:
       semaphoreGreen();
       break;
+
+    case SEMAPHORE_ALERT:
+      semaphoreGreen();
+      break;
+
     case SEMAPHORE_OFF:
       semaphoreOff();
+
     default:
       break;
     };
@@ -408,6 +424,14 @@ protected:
     if (this->_stateTime() > SEMAPHORE_STOP_TIME) {
       this->_changeState(SEMAPHORE_READY);
       this->vReadyGap = random(SEMAPHORE_READY_MIN_TIME, SEMAPHORE_READY_MAX_TIME);
+    }
+  }
+
+  void _processAlert() {
+    if ((this->_stateTime() / SEMAPHORE_ALERT_FLICK_TIME) % 2 ) {
+      semaphoreRed();
+    } else {
+      semaphoreGreen();
     }
   }
 
@@ -563,7 +587,7 @@ public:
       case FINISH_COOLDOWN:
         _stateCooldown();
         break;
-      
+
       default:
         _tryOpen();
         break;
@@ -660,7 +684,7 @@ public:
   bool isTimeOut() {
     return this->vTime + this->vUpdateTime < millis();
   }
-  
+
   void reset() {
     this->vTime = millis();
   }
@@ -733,7 +757,7 @@ void showRaceInfo() {
         vTextState = TEXT_READY;
       }
       break;
-    
+
     case CState::STATE_GATE_COOLDOWN:
       vTextState = TEXT_START_GATE_COOLDOWN;
       break;
@@ -767,7 +791,7 @@ void showRaceTimes() {
   } else {
     printLine(1, "No one on track");
   }
-  
+
   race = vState.getTrack()->lastFinishedRace();
   if (race) {
     lcd.setCursor(0, 2);
